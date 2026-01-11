@@ -10,25 +10,37 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No token found" }, { status: 401 });
     }
 
-    // 1. AIの提案データ（文字列）を、Googleカレンダー用の日付形式に変換する
-    // 例: date="2023/10/25(水)", time="14:00 - 15:00"
-    
-    // (水)などの曜日を消す
-    const cleanDate = eventDetails.date.replace(/\(.\)/, ''); 
-    // 時間を分割する
-    const [startTime, endTime] = eventDetails.time.split(' - ');
+    // 1. 日付文字列のクリーニング
+    // 例: "2026/01/08(木)" -> "2026-01-08"
+    // (スラッシュをハイフンに変え、曜日などの余計な文字を消す)
+    const cleanDate = eventDetails.date
+      .replace(/\(.\)/, '') // (木)などを消す
+      .trim()
+      .replace(/\//g, '-'); // / を - に変える
 
-    // Googleが読める形 (ISO string) に組み立てる
-    // 注意: 本来はタイムゾーン考慮が必要ですが、今回は簡易的に日本時間(JST)として処理します
-    const startDateTime = new Date(`${cleanDate} ${startTime}`).toISOString();
-    const endDateTime = new Date(`${cleanDate} ${endTime}`).toISOString();
+    // 2. 時間を分割
+    // 例: "14:00 - 15:00" -> ["14:00", "15:00"]
+    const [startTimeStr, endTimeStr] = eventDetails.time.split(' - ');
 
-    // 2. Google Calendar API に書き込む
+    // 3. Googleカレンダーが理解できる形式 (YYYY-MM-DDTHH:mm:ss) に組み立てる
+    // 注意: ここで new Date() を使うとサーバーの時差に巻き込まれるため、
+    // あえて文字列操作だけで組み立てます。
+    const startDateTime = `${cleanDate}T${startTimeStr.trim()}:00`;
+    const endDateTime = `${cleanDate}T${endTimeStr.trim()}:00`;
+
+    // 4. Google Calendar API に書き込む
+    // timeZone: 'Asia/Tokyo' を明示するのが最大のポイントです
     const eventBody = {
-      summary: `MTG (${eventDetails.reason})`, // タイトル
+      summary: `MTG (${eventDetails.reason})`,
       description: "Smart Scheduler (Gemini) によって自動作成されました。",
-      start: { dateTime: startDateTime },
-      end: { dateTime: endDateTime },
+      start: { 
+        dateTime: startDateTime, 
+        timeZone: 'Asia/Tokyo' // ★日本時間であることを明示
+      },
+      end: { 
+        dateTime: endDateTime, 
+        timeZone: 'Asia/Tokyo' // ★日本時間であることを明示
+      },
     };
 
     const response = await fetch(
@@ -46,10 +58,10 @@ export async function POST(request: Request) {
     const data = await response.json();
 
     if (data.error) {
+        console.error('Google Calendar Error:', data.error);
         throw new Error(data.error.message);
     }
 
-    // 成功したら、作られた予定のURLを返す
     return NextResponse.json({ success: true, link: data.htmlLink });
 
   } catch (error: any) {

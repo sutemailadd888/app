@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Menu, Plus, Clock, Users, Calendar, LogOut } from 'lucide-react';
+import { Menu, Plus, Clock, Users, Calendar, LogOut, AlertTriangle, RefreshCw } from 'lucide-react';
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 
@@ -14,39 +14,59 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function Home() {
   const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 1. 現在のセッションを確認
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setLoading(false);
     });
 
+    // 2. ログイン状態の変化を監視
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   const handleLogin = async () => {
+    // ★修正: Googleに「アカウント選択」と「同意」を強制させる
+    // これにより、勝手にログインされるのを防ぎ、確実に新しい鍵を取得します
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/`,
         scopes: 'https://www.googleapis.com/auth/calendar',
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent select_account', // ★ここが最強の呪文です
+        },
       },
     });
   };
 
-  // ★修正: 確実にログアウト処理を行う
   const handleLogout = async () => {
     if (!confirm('ログアウトしますか？')) return;
+    
+    // まずブラウザの記憶を消す
+    localStorage.clear();
+    // サーバーからもログアウト
     await supabase.auth.signOut();
-    setSession(null);
-    window.location.reload(); 
+    // 画面を強制リロード
+    window.location.href = "/";
   };
 
+  // ロード中
+  if (loading) {
+    return <div className="flex h-screen items-center justify-center text-gray-400">Loading...</div>;
+  }
+
+  // 未ログインの場合
   if (!session) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50 flex-col">
@@ -65,6 +85,36 @@ export default function Home() {
     );
   }
 
+  // ★重要: ログインしているが、カレンダーの鍵(provider_token)がない場合
+  // ページをリロードすると鍵が消えることがあるため、ここを検知して再ログインを促します
+  const hasToken = session.provider_token;
+  
+  if (!hasToken) {
+    return (
+        <div className="flex h-screen items-center justify-center bg-gray-50 flex-col px-4">
+            <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md w-full border border-yellow-200">
+                <AlertTriangle className="mx-auto text-yellow-500 mb-4" size={48} />
+                <h2 className="text-xl font-bold text-gray-800 mb-2">再接続が必要です</h2>
+                <p className="text-sm text-gray-600 mb-6">
+                    セキュリティのため、Googleカレンダーへの接続が切れました。<br/>
+                    下のボタンから接続し直してください。
+                </p>
+                <button
+                    onClick={handleLogin} // ここを押すと強制同意画面へ飛びます
+                    className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-md transition"
+                >
+                    <RefreshCw size={18} />
+                    <span>Googleに再接続する</span>
+                </button>
+                <button onClick={handleLogout} className="mt-4 text-xs text-gray-400 underline">
+                    一度ログアウトする
+                </button>
+            </div>
+        </div>
+    );
+  }
+
+  // 正常なログイン状態
   return (
     <div className="flex h-screen bg-white text-gray-800 font-sans">
       {/* 左サイドバー (PCのみ表示) */}
@@ -115,7 +165,7 @@ export default function Home() {
                   </div>
                </div>
                
-               {/* ★修正: relativeとz-50を追加して最前面へ */}
+               {/* スマホ用ログアウトボタン */}
                <button 
                  onClick={handleLogout} 
                  className="md:hidden flex flex-col items-center text-gray-400 hover:text-red-500 p-2 relative z-50 cursor-pointer"

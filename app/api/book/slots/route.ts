@@ -7,93 +7,90 @@ export async function GET(request: Request) {
   const hostId = searchParams.get('hostId');
   const date = searchParams.get('date');
 
-  console.log(`🔍 [API] 開始: Host=${hostId}, Date=${date}`);
+  console.log(`\n🔍 [DEBUG] 日程チェック開始: ${date}`);
 
-  if (!hostId || !date) {
-      return NextResponse.json({ error: 'パラメータ不足' }, { status: 400 });
-  }
+  if (!hostId || !date) return NextResponse.json({ error: 'パラメータ不足' }, { status: 400 });
 
-  // 1. 環境変数のチェック
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!serviceRoleKey) {
-      console.error("🚨 [API] エラー: SUPABASE_SERVICE_ROLE_KEY が設定されていません！");
-      return NextResponse.json({ error: 'サーバー設定エラー: キー不足' }, { status: 500 });
-  }
+  if (!serviceRoleKey) return NextResponse.json({ error: 'Server Config Error' }, { status: 500 });
 
-  // 2. 特権クライアントの作成
-  const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    serviceRoleKey
-  );
+  const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceRoleKey);
 
   try {
-    // 3. 金庫からトークンを取り出す
-    const { data: secrets, error: dbError } = await supabaseAdmin
+    // 1. 金庫からトークン取得
+    const { data: secrets } = await supabaseAdmin
       .from('user_secrets')
       .select('access_token')
       .eq('user_id', hostId)
       .single();
 
-    if (dbError || !secrets) {
-        console.error("🚨 [API] トークンが見つかりません。DBエラー:", dbError);
-        return NextResponse.json({ error: 'ホストの連携情報が見つかりません。ダッシュボードを開いて再連携してください。' }, { status: 404 });
-    }
+    if (!secrets?.access_token) return NextResponse.json({ error: 'Token not found' }, { status: 404 });
 
-    console.log("✅ [API] トークン取得成功。Googleに問い合わせます...");
-
-    // 4. Google Calendar API (FreeBusy)
+    // 2. Googleに問い合わせ
+    // JSTで検索範囲を指定 (例: 2026-01-20T00:00:00+09:00)
     const timeMin = `${date}T00:00:00+09:00`;
     const timeMax = `${date}T23:59:59+09:00`;
 
-    const googleRes = await fetch(
-      `https://www.googleapis.com/calendar/v3/freebusy`,
-      {
+    console.log(`📡 Google問い合わせ範囲: ${timeMin} 〜 ${timeMax}`);
+
+    const googleRes = await fetch('https://www.googleapis.com/calendar/v3/freebusy', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${secrets.access_token}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            timeMin,
-            timeMax,
-            timeZone: 'Asia/Tokyo',
-            items: [{ id: 'primary' }]
+            timeMin, timeMax, timeZone: 'Asia/Tokyo', items: [{ id: 'primary' }]
         })
-      }
-    );
+    });
 
-    if (!googleRes.ok) {
-        const errText = await googleRes.text();
-        console.error("🚨 [API] Google API エラー:", errText);
-        return NextResponse.json({ error: 'Googleカレンダーの読み込みに失敗しました' }, { status: 500 });
-    }
-
+    if (!googleRes.ok) throw new Error(await googleRes.text());
+    
     const googleData = await googleRes.json();
-    console.log("✅ [API] Google応答あり。空き枠計算中...");
-
-    // 5. 空き枠計算
     const busyRanges = googleData.calendars.primary.busy;
-    const candidates = [10, 11, 13, 14, 15, 16, 17]; // 候補の時間帯
+
+    // ★ここでGoogleが返してきた「忙しい時間」を全てログに出す
+    console.log("⚠️ Googleが認識している『忙しい時間』一覧:");
+    busyRanges.forEach((range: any, i: number) => {
+        // 日本時間に変換して表示しやすくする
+        const start = new Date(range.start).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+        const end = new Date(range.end).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+        console.log(`   [${i}] ${start} 〜 ${end}`);
+    });
+
+    // 3. 空き枠計算
+    const candidates = [10, 11, 13, 14, 15, 16, 17];
     const availableSlots = [];
 
+    console.log("🕒 各スロットの判定:");
     for (const hour of candidates) {
-        const slotStart = new Date(`${date}T${hour}:00:00+09:00`);
+        // 時間を2桁にする (例: 9 -> '09')
+        const hourStr = hour.toString().padStart(2, '0');
+        
+        // スロットの開始・終了時刻 (Dateオブジェクト)
+        const slotStart = new Date(`${date}T${hourStr}:00:00+09:00`);
         const slotEnd = new Date(`${date}T${hour + 1}:00:00+09:00`);
 
-        const isBusy = busyRanges.some((range: any) => {
+        // 重なりチェック
+        const conflict = busyRanges.find((range: any) => {
             const rangeStart = new Date(range.start);
             const rangeEnd = new Date(range.end);
+            // 重なっているか判定 (Slot開始 < 予定終了 かつ Slot終了 > 予定開始)
             return slotStart < rangeEnd && slotEnd > rangeStart;
         });
 
-        if (!isBusy) availableSlots.push(`${hour}:00`);
+        if (conflict) {
+            console.log(`   ❌ ${hourStr}:00 はNG (理由: ${new Date(conflict.start).toLocaleTimeString('ja-JP', {timeZone:'Asia/Tokyo'})}〜 の予定と重複)`);
+        } else {
+            console.log(`   ✅ ${hourStr}:00 はOK`);
+            availableSlots.push(`${hourStr}:00`);
+        }
     }
 
-    console.log(`✅ [API] 計算完了。空き枠: ${availableSlots.length}件`);
     return NextResponse.json({ slots: availableSlots });
 
   } catch (error: any) {
-    console.error("🚨 [API] 予期せぬエラー:", error);
+    console.error("🚨 Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

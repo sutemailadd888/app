@@ -2,54 +2,46 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-// 管理者権限でSupabaseを操作するクライアント
-// ※注意: 本来は Service Role Key を使うべきですが、
-// 簡易的にAnon Key + RLS回避(または自身のトークン)で実装します。
-// 今回は「user_secrets」を読み取るために、簡易的な手法として
-// 「クライアント側から渡されたID」を信用してDB検索します。
-// (商用環境ではService Role Keyを環境変数に入れて使ってください)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const hostId = searchParams.get('hostId');
-  const date = searchParams.get('date'); // YYYY-MM-DD
+  const date = searchParams.get('date');
 
-  if (!hostId || !date) return NextResponse.json({ error: 'Missing params' }, { status: 400 });
+  console.log(`🔍 [API] 開始: Host=${hostId}, Date=${date}`);
+
+  if (!hostId || !date) {
+      return NextResponse.json({ error: 'パラメータ不足' }, { status: 400 });
+  }
+
+  // 1. 環境変数のチェック
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) {
+      console.error("🚨 [API] エラー: SUPABASE_SERVICE_ROLE_KEY が設定されていません！");
+      return NextResponse.json({ error: 'サーバー設定エラー: キー不足' }, { status: 500 });
+  }
+
+  // 2. 特権クライアントの作成
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    serviceRoleKey
+  );
 
   try {
-    // 1. 金庫からホストのトークンを取得 (Service Roleが必要だが、ここではRLSポリシーに頼る)
-    // ★重要: ここで本来は process.env.SUPABASE_SERVICE_ROLE_KEY を使うべきですが、
-    // セキュリティ設定(RLS)で "Select" が許可されていないと他人のトークンは見れません。
-    // 今回のSQLでは「自分しか見れない」設定にしました。
-    // そのため、このAPIは「Server側で管理者権限」で動かす必要があります。
-    
-    // 【簡易対応】
-    // 今回はデモのため、user_secrets の Select ポリシーを一時的に開放するか、
-    // もしくは Service Role Key を env に追加する必要があります。
-    // ここでは、ユーザーの手間を減らすため、直前に作ったテーブルのポリシーを
-    // 「APIからは読める」ように変更するSQLを後で案内します。
-    
-    // 一旦、Service Role Key がある前提のコードを書きます（後述の設定が必要）
-    const adminAuthClient = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // フォールバック
-    );
-
-    const { data: secrets } = await adminAuthClient
+    // 3. 金庫からトークンを取り出す
+    const { data: secrets, error: dbError } = await supabaseAdmin
       .from('user_secrets')
       .select('access_token')
       .eq('user_id', hostId)
       .single();
 
-    if (!secrets?.access_token) {
-        return NextResponse.json({ error: 'Host is offline (Token not found)' }, { status: 404 });
+    if (dbError || !secrets) {
+        console.error("🚨 [API] トークンが見つかりません。DBエラー:", dbError);
+        return NextResponse.json({ error: 'ホストの連携情報が見つかりません。ダッシュボードを開いて再連携してください。' }, { status: 404 });
     }
 
-    // 2. Google Calendar API (FreeBusy) を叩く
+    console.log("✅ [API] トークン取得成功。Googleに問い合わせます...");
+
+    // 4. Google Calendar API (FreeBusy)
     const timeMin = `${date}T00:00:00+09:00`;
     const timeMax = `${date}T23:59:59+09:00`;
 
@@ -69,36 +61,39 @@ export async function GET(request: Request) {
         })
       }
     );
+
+    if (!googleRes.ok) {
+        const errText = await googleRes.text();
+        console.error("🚨 [API] Google API エラー:", errText);
+        return NextResponse.json({ error: 'Googleカレンダーの読み込みに失敗しました' }, { status: 500 });
+    }
+
     const googleData = await googleRes.json();
-    
-    // 3. 忙しい時間を解析して、空き枠(Slots)を作る
-    const busyRanges = googleData.calendars.primary.busy; // [{start:..., end:...}, ...]
-    
-    // 提供する枠の候補 (10:00 〜 18:00)
-    const candidates = [10, 11, 13, 14, 15, 16, 17];
+    console.log("✅ [API] Google応答あり。空き枠計算中...");
+
+    // 5. 空き枠計算
+    const busyRanges = googleData.calendars.primary.busy;
+    const candidates = [10, 11, 13, 14, 15, 16, 17]; // 候補の時間帯
     const availableSlots = [];
 
     for (const hour of candidates) {
         const slotStart = new Date(`${date}T${hour}:00:00+09:00`);
         const slotEnd = new Date(`${date}T${hour + 1}:00:00+09:00`);
 
-        // この枠が「忙しい時間」と被っていないかチェック
         const isBusy = busyRanges.some((range: any) => {
             const rangeStart = new Date(range.start);
             const rangeEnd = new Date(range.end);
-            // 被り判定 (Slotの開始がRangeの終了より前、かつ、Slotの終了がRangeの開始より後)
             return slotStart < rangeEnd && slotEnd > rangeStart;
         });
 
-        if (!isBusy) {
-            availableSlots.push(`${hour}:00`);
-        }
+        if (!isBusy) availableSlots.push(`${hour}:00`);
     }
 
+    console.log(`✅ [API] 計算完了。空き枠: ${availableSlots.length}件`);
     return NextResponse.json({ slots: availableSlots });
 
   } catch (error: any) {
-    console.error(error);
+    console.error("🚨 [API] 予期せぬエラー:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

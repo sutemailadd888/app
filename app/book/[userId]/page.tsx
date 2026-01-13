@@ -63,15 +63,24 @@ export default function BookingPage() {
   };
 
   // 送信処理
+// app/book/[userId]/page.tsx の handleSubmit 部分
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoadingSubmit(true);
 
     try {
-      // 日時の組み立て (例: 2026-01-20T14:00:00)
-      const startDateTime = `${selectedDate}T${selectedTime}:00`;
-      // 終了時間は簡易的に1時間後とする
-      const endDateTime = `${selectedDate}T${parseInt(selectedTime.split(':')[0]) + 1}:00:00`;
+      // ★修正: 日本時間 (+09:00) を明示的に付けて保存する
+      const startHour = parseInt(selectedTime.split(':')[0]);
+      const endHour = startHour + 1;
+
+      // 時間を2桁に揃える (例: 9 -> 09)
+      const startTimeStr = selectedTime.padStart(5, '0'); // "09:00" or "10:00"
+      const endTimeStr = endHour.toString().padStart(2, '0') + ':00';
+
+      // YYYY-MM-DDTHH:MM:00+09:00 の形式にする
+      const startDateTime = `${selectedDate}T${startTimeStr}:00+09:00`;
+      const endDateTime = `${selectedDate}T${endTimeStr}:00+09:00`;
 
       const { error } = await supabase
         .from('booking_requests')
@@ -83,7 +92,7 @@ export default function BookingPage() {
             start_time: startDateTime,
             end_time: endDateTime,
             note: note,
-            status: 'pending' // 最初は承認待ち
+            status: 'pending'
           }
         ]);
 

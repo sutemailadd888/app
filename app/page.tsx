@@ -3,11 +3,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase, ExternalLink } from 'lucide-react'; // ExternalLinkを追加
+import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase, ExternalLink, CheckCircle2 } from 'lucide-react';
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
-import TokenSyncer from './components/TokenSyncer';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -31,6 +30,23 @@ export default function Home() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // ★重要: あなたがログインしている間、裏でこっそり「合鍵」をDBに保存し続ける処理
+  // これにより、予約ページ(BookingPage)があなたの代わりにGoogleカレンダーを見れるようになります
+  useEffect(() => {
+    const syncToken = async () => {
+      if (!session?.provider_token) return;
+      
+      // user_secretsテーブルにトークンを保存・更新
+      await supabase.from('user_secrets').upsert({
+          user_id: session.user.id,
+          access_token: session.provider_token,
+          refresh_token: session.provider_refresh_token || null,
+          updated_at: new Date().toISOString()
+      });
+    };
+    syncToken();
+  }, [session]);
 
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
@@ -164,19 +180,20 @@ export default function Home() {
                       <MeetingCard session={session} />
                     </div>
                     
-                    <TokenSyncer session={session} />
-
                     <RuleList session={session} />
 
-                    {/* ★ここに追加しました：予約ページへのリンクボタン */}
-                    <div className="mt-12 bg-purple-50 p-6 rounded-xl border border-purple-100 flex flex-col md:flex-row items-center justify-between gap-4">
+                    {/* ★修正: 文言を「連動中」に変更 */}
+                    <div className="mt-12 bg-white p-6 rounded-xl border border-purple-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-purple-600"></div>
                         <div>
                             <h3 className="font-bold text-purple-900 text-base flex items-center gap-2">
                                 <ExternalLink size={18}/> あなたの公開予約ページ
                             </h3>
-                            <p className="text-sm text-purple-700 mt-1 opacity-80">
+                            <p className="text-sm text-gray-600 mt-1">
                                 このURLを社外の人に送ると、面談の予約リクエストを受け付けられます。<br/>
-                                (まだ空き状況とは連動していません)
+                                <span className="text-green-600 font-bold flex items-center gap-1 mt-1">
+                                    <CheckCircle2 size={14}/> Googleカレンダーの空き状況とリアルタイム連動中
+                                </span>
                             </p>
                         </div>
                         <a 

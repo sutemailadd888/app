@@ -6,8 +6,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase } from 'lucide-react';
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
+// ★追加
+import CalendarView from './components/CalendarView';
 
-// --- Supabaseの初期化 ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -15,8 +16,6 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  
-  // ★追加: 今どのタブを開いているかを管理する (初期値は 'meeting')
   const [activeTab, setActiveTab] = useState<'meeting' | 'recruitment'>('meeting');
 
   useEffect(() => {
@@ -85,7 +84,6 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-white text-gray-800 font-sans">
-      {/* 左サイドバー (PCのみ表示) */}
       <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col hidden md:flex">
         <div className="p-4 flex items-center space-x-2 text-gray-600 font-medium cursor-pointer hover:bg-gray-100 rounded-md m-2">
           <div className="w-6 h-6 bg-purple-600 rounded text-white flex items-center justify-center text-xs">G</div>
@@ -95,7 +93,6 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto py-2">
           <div className="px-4 py-1 text-xs text-gray-500 font-semibold mt-4">チームツール</div>
           <nav className="space-y-1 px-2">
-            {/* ★修正: クリックでタブを切り替えるように変更 */}
             <SidebarItem 
                 icon={<Calendar size={18} />} 
                 label="定例ミーティング" 
@@ -125,7 +122,6 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* メインキャンバス */}
       <main className="flex-1 overflow-y-auto pb-20">
         <div className="h-32 md:h-48 bg-gradient-to-r from-blue-100 to-purple-100 relative group">
           <button className="absolute bottom-4 right-4 bg-white/80 px-3 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition hidden md:block">カバー画像を変更</button>
@@ -146,20 +142,9 @@ export default function Home() {
                </button>
             </div>
             
-            {/* ★スマホ用タブ切り替えメニュー (PCでは消える) */}
             <div className="md:hidden flex gap-2 mt-6 overflow-x-auto pb-2">
-                <button 
-                    onClick={() => setActiveTab('meeting')}
-                    className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap ${activeTab === 'meeting' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}
-                >
-                    定例ミーティング
-                </button>
-                <button 
-                    onClick={() => setActiveTab('recruitment')}
-                    className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap ${activeTab === 'recruitment' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}
-                >
-                    採用面談リスト
-                </button>
+                <button onClick={() => setActiveTab('meeting')} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap ${activeTab === 'meeting' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>定例ミーティング</button>
+                <button onClick={() => setActiveTab('recruitment')} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap ${activeTab === 'recruitment' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>採用面談リスト</button>
             </div>
 
             <div className="border-b pb-4 mb-8 mt-4"></div>
@@ -167,18 +152,23 @@ export default function Home() {
 
           <div className="space-y-6">
             
-            {/* ★ここが切り替えの心臓部 */}
             {activeTab === 'meeting' ? (
-                // --- 日程調整ツールの表示 ---
                 <div className="animation-fade-in">
                     <p className="text-gray-700 leading-relaxed text-sm md:text-base mb-6">
                         Google連携完了。ここから日程調整を開始できます。
                     </p>
-                    <MeetingCard session={session} />
+                    
+                    {/* ★ここに追加しました */}
+                    <CalendarView session={session} />
+                    
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <MeetingCard session={session} />
+                      {/* レイアウト調整のため、カード系を横並びにしてもいいかもしれません */}
+                    </div>
+                    
                     <RuleList session={session} />
                 </div>
             ) : (
-                // --- 採用面談リスト (今はまだ準備中) ---
                 <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 animation-fade-in">
                     <Briefcase className="mx-auto text-gray-300 mb-4" size={48} />
                     <h3 className="text-xl font-bold text-gray-400">採用面談リスト</h3>
@@ -193,7 +183,6 @@ export default function Home() {
   );
 }
 
-// SidebarItemにonClickを追加
 function SidebarItem({ icon, label, active = false, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void }) {
   return (
     <div 

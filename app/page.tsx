@@ -7,6 +7,7 @@ import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase, ExternalL
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
+import RequestInbox from './components/RequestInbox';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -174,6 +175,8 @@ export default function Home() {
                         Google連携完了。ここから日程調整を開始できます。
                     </p>
                     
+                    <RequestInbox session={session} />
+
                     <CalendarView session={session} />
                     
                     <div className="grid md:grid-cols-2 gap-6">

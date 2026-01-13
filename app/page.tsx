@@ -8,6 +8,7 @@ import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
 import RequestInbox from './components/RequestInbox';
+import ScheduleSettings from './components/ScheduleSettings';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -176,6 +177,8 @@ export default function Home() {
                     </p>
                     
                     <RequestInbox session={session} />
+
+                    <ScheduleSettings session={session} />
 
                     <CalendarView session={session} />
                     

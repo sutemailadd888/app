@@ -7,8 +7,11 @@ import { Users, Calendar, LogOut, AlertTriangle, RefreshCw, Briefcase, ExternalL
 import MeetingCard from './components/MeetingCard';
 import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
+import TokenSyncer from './components/TokenSyncer';
 import RequestInbox from './components/RequestInbox';
 import ScheduleSettings from './components/ScheduleSettings';
+// ★追加
+import WorkspaceSwitcher from './components/WorkspaceSwitcher';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -17,6 +20,10 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export default function Home() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // ★追加: 現在選択中のワークスペース
+  const [currentOrg, setCurrentOrg] = useState<any>(null);
+
   const [activeTab, setActiveTab] = useState<'meeting' | 'recruitment'>('meeting');
 
   useEffect(() => {
@@ -32,23 +39,6 @@ export default function Home() {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  // ★重要: あなたがログインしている間、裏でこっそり「合鍵」をDBに保存し続ける処理
-  // これにより、予約ページ(BookingPage)があなたの代わりにGoogleカレンダーを見れるようになります
-  useEffect(() => {
-    const syncToken = async () => {
-      if (!session?.provider_token) return;
-      
-      // user_secretsテーブルにトークンを保存・更新
-      await supabase.from('user_secrets').upsert({
-          user_id: session.user.id,
-          access_token: session.provider_token,
-          refresh_token: session.provider_refresh_token || null,
-          updated_at: new Date().toISOString()
-      });
-    };
-    syncToken();
-  }, [session]);
 
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
@@ -73,10 +63,9 @@ export default function Home() {
   if (!session) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50 flex-col">
-        <h1 className="text-3xl font-bold mb-8 text-gray-800">GAKU-HUB Workspace</h1>
+        <h1 className="text-3xl font-bold mb-8 text-gray-800">GAKU-HUB OS</h1>
         <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md w-full border border-gray-100">
-          <p className="mb-6 text-gray-600">運営チームのための統合プラットフォーム。<br/>Googleアカウントで開始してください。</p>
-          <button onClick={handleLogin} className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-3 px-4 rounded-md transition shadow-sm">
+            <button onClick={handleLogin} className="w-full flex items-center justify-center space-x-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-3 px-4 rounded-md transition shadow-sm">
             <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
             <span>Googleでログイン</span>
           </button>
@@ -85,38 +74,41 @@ export default function Home() {
     );
   }
 
-  const hasToken = session.provider_token;
-  if (!hasToken) {
-    return (
-        <div className="flex h-screen items-center justify-center bg-gray-50 flex-col px-4">
-            <div className="bg-white p-8 rounded-lg shadow-md text-center max-w-md w-full border border-yellow-200">
-                <AlertTriangle className="mx-auto text-yellow-500 mb-4" size={48} />
-                <h2 className="text-xl font-bold text-gray-800 mb-2">再接続が必要です</h2>
-                <button onClick={handleLogin} className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-md transition">
-                    <RefreshCw size={18} /><span>Googleに再接続する</span>
-                </button>
-            </div>
-        </div>
-    );
-  }
-
   return (
-    <div className="flex h-screen bg-white text-gray-800 font-sans">
+    <div className="flex h-screen bg-white text-gray-800 font-sans overflow-hidden">
+      {/* ★構成変更: 
+         1. WorkspaceSwitcher (左端・黒)
+         2. Sidebar (その右・白)
+         3. Main (右側・メイン)
+      */}
+      
+      {/* 1. 左端: ワークスペース切替 */}
+      <WorkspaceSwitcher 
+        session={session} 
+        currentOrgId={currentOrg?.id} 
+        onSwitch={(org) => setCurrentOrg(org)} 
+      />
+
+      {/* 2. 左: メニューサイドバー */}
       <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col hidden md:flex">
-        <div className="p-4 flex items-center space-x-2 text-gray-600 font-medium cursor-pointer hover:bg-gray-100 rounded-md m-2">
-          <div className="w-6 h-6 bg-purple-600 rounded text-white flex items-center justify-center text-xs">G</div>
-          <span>GAKU-HUB Admin</span>
+        <div className="p-4 border-b border-gray-200 h-16 flex items-center">
+            {currentOrg ? (
+                <div className="font-bold text-gray-800 truncate">{currentOrg.name}</div>
+            ) : (
+                <div className="text-gray-400 text-sm animate-pulse">Loading...</div>
+            )}
         </div>
         
         <div className="flex-1 overflow-y-auto py-2">
-          <div className="px-4 py-1 text-xs text-gray-500 font-semibold mt-4">チームツール</div>
+          <div className="px-4 py-1 text-xs text-gray-500 font-semibold mt-4">Apps</div>
           <nav className="space-y-1 px-2">
             <SidebarItem 
                 icon={<Calendar size={18} />} 
-                label="定例ミーティング" 
+                label="日程調整 & カレンダー" 
                 active={activeTab === 'meeting'} 
                 onClick={() => setActiveTab('meeting')}
             />
+            {/* ★ここを動的に変えられるのがSlack化のメリット */}
             <SidebarItem 
                 icon={<Briefcase size={18} />} 
                 label="採用面談リスト" 
@@ -140,56 +132,55 @@ export default function Home() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto pb-20">
-        <div className="h-32 md:h-48 bg-gradient-to-r from-blue-100 to-purple-100 relative group">
-          <button className="absolute bottom-4 right-4 bg-white/80 px-3 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition hidden md:block">カバー画像を変更</button>
+      {/* 3. 右: メインコンテンツ */}
+      <main className="flex-1 overflow-y-auto relative bg-white">
+        {/* ヘッダー画像エリア */}
+        <div className="h-32 md:h-48 bg-gradient-to-r from-gray-100 to-gray-200 relative group">
+          <div className="absolute bottom-4 left-4 md:left-12">
+             <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
+                {currentOrg ? currentOrg.name : 'Loading...'}
+             </h1>
+             <p className="text-sm text-gray-500 flex items-center gap-1 mt-1">
+                <Users size={12}/> {session.user.email}
+             </p>
+          </div>
         </div>
 
-        <div className="max-w-4xl mx-auto px-4 md:px-12 py-8">
-          <div className="mb-8 group">
-            <div className="flex justify-between items-start">
-               <div>
-                  <h1 className="text-2xl md:text-4xl font-bold text-gray-900 mb-2">{session.user.user_metadata.full_name}さんの<br className="md:hidden"/>ワークスペース</h1>
-                  <div className="flex items-center space-x-2 text-gray-500 text-xs md:text-sm">
-                    <Users size={14} /><span>参加者: {session.user.email}</span>
-                  </div>
-               </div>
-               
-               <button onClick={handleLogout} className="md:hidden flex flex-col items-center text-gray-400 hover:text-red-500 p-2 relative z-50 cursor-pointer">
-                 <LogOut size={20}/><span className="text-[10px] mt-1">Exit</span>
-               </button>
-            </div>
-            
-            <div className="md:hidden flex gap-2 mt-6 overflow-x-auto pb-2">
-                <button onClick={() => setActiveTab('meeting')} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap ${activeTab === 'meeting' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>定例ミーティング</button>
-                <button onClick={() => setActiveTab('recruitment')} className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap ${activeTab === 'recruitment' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600'}`}>採用面談リスト</button>
-            </div>
+        {/* コンテンツエリア */}
+        <div className="max-w-4xl mx-auto px-4 md:px-12 py-8 pb-24">
+            {/* 自動トークン同期 */}
+            <TokenSyncer session={session} />
 
-            <div className="border-b pb-4 mb-8 mt-4"></div>
-          </div>
+            {/* まだ組織が読み込まれていない場合 */}
+            {!currentOrg && (
+                <div className="text-center py-20 text-gray-400">
+                    ワークスペースを読み込み中、または作成してください...
+                </div>
+            )}
 
-          <div className="space-y-6">
-            
-            {activeTab === 'meeting' ? (
-                <div className="animation-fade-in">
-                    <p className="text-gray-700 leading-relaxed text-sm md:text-base mb-6">
-                        Google連携完了。ここから日程調整を開始できます。
-                    </p>
+            {currentOrg && activeTab === 'meeting' && (
+                <div className="animation-fade-in space-y-8">
+                    {/* ここに将来「組織ごとの設定」を渡すようになります */}
                     
+                    {/* 未承認リクエスト (注意: まだ個人IDベースで動いてます) */}
                     <RequestInbox session={session} />
 
-                    <ScheduleSettings session={session} />
-
+                    {/* カレンダー */}
                     <CalendarView session={session} />
                     
+                    {/* 設定ボタン */}
+                    <ScheduleSettings session={session} />
+
+                    {/* 自動調整カード */}
                     <div className="grid md:grid-cols-2 gap-6">
                       <MeetingCard session={session} />
                     </div>
                     
+                    {/* ルールリスト */}
                     <RuleList session={session} />
 
-                    {/* ★修正: 文言を「連動中」に変更 */}
-                    <div className="mt-12 bg-white p-6 rounded-xl border border-purple-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
+                    {/* 予約ページリンク */}
+                    <div className="bg-white p-6 rounded-xl border border-purple-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-1 h-full bg-purple-600"></div>
                         <div>
                             <h3 className="font-bold text-purple-900 text-base flex items-center gap-2">
@@ -198,7 +189,7 @@ export default function Home() {
                             <p className="text-sm text-gray-600 mt-1">
                                 このURLを社外の人に送ると、面談の予約リクエストを受け付けられます。<br/>
                                 <span className="text-green-600 font-bold flex items-center gap-1 mt-1">
-                                    <CheckCircle2 size={14}/> Googleカレンダーの空き状況とリアルタイム連動中
+                                    <CheckCircle2 size={14}/> リアルタイム連動中
                                 </span>
                             </p>
                         </div>
@@ -212,15 +203,19 @@ export default function Home() {
                         </a>
                     </div>
                 </div>
-            ) : (
+            )}
+
+            {currentOrg && activeTab === 'recruitment' && (
                 <div className="text-center py-20 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 animation-fade-in">
                     <Briefcase className="mx-auto text-gray-300 mb-4" size={48} />
                     <h3 className="text-xl font-bold text-gray-400">採用面談リスト</h3>
-                    <p className="text-gray-400 text-sm mt-2">この機能は現在開発中です。<br/>次のアップデートをお待ちください。</p>
+                    <p className="text-gray-400 text-sm mt-2">
+                        {currentOrg.name} の採用情報をここに表示します。<br/>
+                        (現在開発中)
+                    </p>
                 </div>
             )}
             
-          </div>
         </div>
       </main>
     </div>

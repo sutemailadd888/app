@@ -11,7 +11,7 @@ import {
 
 // コンポーネント
 import RequestInbox from './components/RequestInbox';
-import GoogleCalendarView from './components/GoogleCalendarView';
+import GoogleCalendarView from './components/CalendarView';
 import OrgSettings from './components/OrgSettings';
 
 // Supabaseクライアント
@@ -273,7 +273,7 @@ export default function Dashboard() {
 
                         <RequestInbox session={session} orgId={currentOrg.id} />
                         
-                        <GoogleCalendarView session={session} orgId={currentOrg.id} />
+                        <CalendarView session={session} />
                     </div>
                 )}
 

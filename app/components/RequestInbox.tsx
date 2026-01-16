@@ -3,140 +3,163 @@
 
 import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { Inbox, Check, X, Loader2, Calendar, User, MessageSquare } from 'lucide-react';
+import { Mail, Check, X, Loader2, Calendar, Clock, AlertCircle } from 'lucide-react';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// ★変更: orgId を受け取る
 interface Props {
   session: any;
+  orgId: string;
 }
 
-export default function RequestInbox({ session }: Props) {
+export default function RequestInbox({ session, orgId }: Props) {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
 
+  // ★変更: orgId が変わるたびに再読み込み
   useEffect(() => {
-    fetchRequests();
-  }, [session]);
+    if (session && orgId) {
+        fetchRequests();
+    }
+  }, [session, orgId]);
 
   const fetchRequests = async () => {
-    if (!session?.user?.id) return;
-    setLoading(true);
-    // 自分の宛の、かつ 'pending' (未承認) のものを取得
+    // ★変更: organization_id でフィルタリングする
     const { data, error } = await supabase
-        .from('booking_requests')
-        .select('*')
-        .eq('host_user_id', session.user.id)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
-    
-    if (data) setRequests(data);
-    setLoading(false);
-  };
+      .from('booking_requests')
+      .select('*')
+      .eq('organization_id', orgId) // ここが重要！
+      .eq('status', 'pending') // 未承認のものだけ
+      .order('created_at', { ascending: false });
 
-  // 承認処理
-  const handleApprove = async (req: any) => {
-    if (!confirm(`${req.guest_name}様からの予約を承認し、カレンダーに登録しますか？`)) return;
-    setProcessingId(req.id);
-
-    try {
-        const res = await fetch('/api/book/approve', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ requestId: req.id, session: session })
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-            alert("✅ 承認しました！招待メールが送信されました。");
-            fetchRequests(); // リスト更新
-        } else {
-            alert("エラー: " + data.error);
-        }
-    } catch (e) {
-        console.error(e);
-        alert("通信エラーが発生しました");
-    } finally {
-        setProcessingId(null);
+    if (!error && data) {
+      setRequests(data);
     }
   };
 
-  // 辞退(却下)処理
+  const handleApprove = async (req: any) => {
+    if (!confirm(`${req.guest_name} 様の予約を承認しますか？`)) return;
+    setProcessingId(req.id);
+    
+    try {
+      // 1. カレンダーに予定を作成するAPIを呼ぶ
+      // (作成処理の中で Google Calendar API を叩く)
+      const res = await fetch('/api/calendar/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            session: session, 
+            request: req 
+        }),
+      });
+      
+      const result = await res.json();
+      if (!result.success) throw new Error(result.error);
+
+      // 2. DBのステータスを承認済み(confirmed)にする
+      const { error } = await supabase
+        .from('booking_requests')
+        .update({ status: 'confirmed' })
+        .eq('id', req.id);
+
+      if (error) throw error;
+
+      alert("✅ 予約を承認し、カレンダーに追加しました！");
+      fetchRequests(); // リスト更新
+
+    } catch (e: any) {
+      console.error(e);
+      alert(`エラー: ${e.message}`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   const handleReject = async (id: string) => {
-    if (!confirm('本当にこのリクエストを辞退しますか？(相手には通知されません/手動連絡が必要です)')) return;
-    // 今回は簡易的にDBのステータスだけ変える（メール送信機能がないため）
-    // 本格運用ではSendGridなどで「今回はごめんなさいメール」を送ると親切です
+    if (!confirm('本当に却下しますか？（メール通知はされません）')) return;
+    setProcessingId(id);
+
     const { error } = await supabase
         .from('booking_requests')
         .update({ status: 'rejected' })
         .eq('id', id);
-    
+
     if (!error) {
         fetchRequests();
+    } else {
+        alert("エラーが発生しました");
     }
+    setProcessingId(null);
   };
 
-  if (requests.length === 0) return null; // リクエストがなければ何も表示しない
+  // リクエストが0件の場合は何も表示しない
+  if (requests.length === 0) return null;
 
   return (
-    <div className="bg-white border-2 border-purple-500 rounded-xl shadow-lg overflow-hidden mb-8 animate-in slide-in-from-top-4">
-        <div className="bg-purple-600 px-4 py-3 flex items-center justify-between text-white">
-            <h3 className="font-bold flex items-center gap-2">
-                <Inbox size={20}/> 未承認の予約リクエスト ({requests.length}件)
-            </h3>
-            <span className="text-xs bg-purple-500 px-2 py-1 rounded">要対応</span>
-        </div>
-        <div className="divide-y divide-gray-100">
-            {requests.map((req) => {
-                const start = new Date(req.start_time);
-                const dateStr = start.toLocaleDateString();
-                const timeStr = `${start.getHours()}:${start.getMinutes().toString().padStart(2, '0')}`;
+    <div className="bg-white border border-purple-200 rounded-xl p-6 shadow-sm mb-8 animate-in slide-in-from-top-4">
+      <h3 className="text-purple-900 font-bold mb-4 flex items-center gap-2">
+        <Mail className="text-purple-600"/>
+        未承認の予約リクエスト ({requests.length})
+        <span className="text-xs font-normal text-purple-600 bg-purple-50 px-2 py-1 rounded-full animate-pulse">
+            New
+        </span>
+      </h3>
 
-                return (
-                    <div key={req.id} className="p-4 hover:bg-purple-50 transition">
-                        <div className="flex flex-col md:flex-row justify-between gap-4">
-                            <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-bold text-lg text-gray-800">{req.guest_name} 様</span>
-                                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded flex items-center gap-1">
-                                        <Calendar size={10}/> {dateStr} {timeStr}〜
-                                    </span>
-                                </div>
-                                <div className="text-sm text-gray-600 mb-2">{req.guest_email}</div>
-                                {req.note && (
-                                    <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded border border-gray-100 flex gap-2">
-                                        <MessageSquare size={14} className="shrink-0 mt-0.5"/>
-                                        <span>{req.note}</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                                <button 
-                                    onClick={() => handleReject(req.id)}
-                                    disabled={!!processingId}
-                                    className="px-3 py-2 rounded-lg text-xs font-bold text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 transition"
-                                >
-                                    辞退
-                                </button>
-                                <button 
-                                    onClick={() => handleApprove(req)}
-                                    disabled={!!processingId}
-                                    className="px-4 py-2 rounded-lg text-sm font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-md flex items-center gap-2 transition"
-                                >
-                                    {processingId === req.id ? <Loader2 className="animate-spin" size={16}/> : <Check size={16}/>}
-                                    承認して確定
-                                </button>
-                            </div>
-                        </div>
+      <div className="space-y-4">
+        {requests.map((req) => (
+            <div key={req.id} className="border border-gray-200 rounded-lg p-4 flex flex-col md:flex-row gap-4 items-start md:items-center bg-gray-50">
+                
+                {/* 日時と内容 */}
+                <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="bg-white border border-gray-300 text-gray-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
+                            <Calendar size={12}/>
+                            {new Date(req.start_time).toLocaleDateString()}
+                        </span>
+                        <span className="bg-white border border-gray-300 text-gray-700 text-xs font-bold px-2 py-1 rounded flex items-center gap-1">
+                            <Clock size={12}/>
+                            {new Date(req.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} 〜
+                        </span>
                     </div>
-                );
-            })}
-        </div>
+                    <div className="font-bold text-gray-800 text-lg mb-1">
+                        {req.guest_name} <span className="text-sm font-normal text-gray-500">様より</span>
+                    </div>
+                    <div className="text-sm text-gray-500 flex flex-col gap-1">
+                        <div>📧 {req.guest_email}</div>
+                        {req.note && (
+                            <div className="bg-white p-2 rounded border border-gray-200 text-gray-600 mt-1 text-xs">
+                                "{req.note}"
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* アクションボタン */}
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <button 
+                        onClick={() => handleReject(req.id)}
+                        disabled={processingId === req.id}
+                        className="flex-1 md:flex-none border border-gray-300 text-gray-500 hover:bg-gray-200 hover:text-gray-700 px-4 py-2 rounded-lg text-sm font-bold transition"
+                    >
+                        却下
+                    </button>
+                    <button 
+                        onClick={() => handleApprove(req)}
+                        disabled={processingId === req.id}
+                        className="flex-1 md:flex-none bg-purple-600 text-white hover:bg-purple-700 px-6 py-2 rounded-lg text-sm font-bold shadow-md transition flex items-center justify-center gap-2"
+                    >
+                        {processingId === req.id ? <Loader2 className="animate-spin" size={16}/> : <Check size={16}/>}
+                        承認する
+                    </button>
+                </div>
+            </div>
+        ))}
+      </div>
     </div>
   );
 }

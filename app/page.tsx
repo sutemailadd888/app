@@ -154,7 +154,7 @@ export default function Home() {
                 <div key={currentOrg.id} className="animation-fade-in space-y-8">
                     
                     {/* リクエスト受信箱 */}
-                    <RequestInbox session={session} />
+                    <RequestInbox session={session} orgId={currentOrg.id} />
 
                     {/* Active Calendar */}
                     <CalendarView session={session} />

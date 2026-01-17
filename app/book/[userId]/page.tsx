@@ -93,16 +93,15 @@ export default function BookingPage() {
 
       if (error) throw error;
 
-      // 2. メール通知 (本番用設定: ドメイン認証待ち)
+      // 2. メール通知 (本番用設定)
       await fetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            // ドメイン認証が完了したら noreply@gaku-hub.com などに変更可能
-            // 現在は認証待ち or テストのため、安全策で Resend推奨設定にしておきます
-            from: 'GAKU-HUB OS <onboarding@resend.dev>', 
+            // (noreply@gaku-hub.com や booking@gaku-hub.com など、好きな名前でOKです)
+            from: 'GAKU-HUB OS <noreply@gaku-hub.com>', 
             
-            to: 'your-email@example.com', // ★ここはあなたのメアドのまま(テスト用)
+            to: 'sutemailadd888@gmail.com', 
             subject: `【予約リクエスト】${guestName}様より`,
             html: `
                 <h3>新しい予約リクエストが届きました</h3>

@@ -44,12 +44,12 @@ export default function ScheduleSettings({ session, orgId }: Props) {
   const fetchSettings = async () => {
     if (!session?.user?.id || !orgId) return;
     
-    // ★変更点: organization_id も条件に加える
+    // ★変更点: workspace_id も条件に加える
     const { data } = await supabase
         .from('schedule_settings')
         .select('weekly_config')
         .eq('user_id', session.user.id)
-        .eq('organization_id', orgId)
+        .eq('workspace_id', orgId)
         .single();
     
     if (data?.weekly_config) {
@@ -64,12 +64,12 @@ export default function ScheduleSettings({ session, orgId }: Props) {
     if (!orgId) return alert("組織が選択されていません");
     setLoading(true);
 
-    // ★変更点: organization_id を含めて保存する
+    // ★変更点: workspace_id を含めて保存する
     const { error } = await supabase
         .from('schedule_settings')
         .upsert({
             user_id: session.user.id,
-            organization_id: orgId, // ここ！
+            workspace_id: orgId, // ここ！
             weekly_config: config,
             updated_at: new Date().toISOString()
         });

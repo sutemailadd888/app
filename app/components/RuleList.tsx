@@ -71,7 +71,7 @@ export default function RuleList({ session, orgId }: Props) {
             Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          organization_id: orgId, // ★重要: ここでチームIDを保存！
+          workspace_id: orgId, // ★重要: ここでチームIDを保存！
           title: newTitle,
           targetDay: parseInt(newDay),
           prompt: newPrompt,

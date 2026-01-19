@@ -118,7 +118,7 @@ export default function MeetingCard({ session, orgId }: Props) {
         body: JSON.stringify({
           session: session,
           eventDetails: suggestion,
-          organization_id: orgId // 将来のために送信
+          workspace_id: orgId // 将来のために送信
         }),
       });
 

@@ -81,7 +81,7 @@ export default function BookingPage() {
         .insert([
           {
             host_user_id: hostUserId,
-            organization_id: orgId,
+            workspace_id: orgId,
             guest_name: guestName,
             guest_email: guestEmail,
             start_time: startDateTime,

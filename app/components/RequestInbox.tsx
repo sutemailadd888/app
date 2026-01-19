@@ -31,7 +31,7 @@ export default function RequestInbox({ session, orgId }: Props) {
     const { data, error } = await supabase
       .from('booking_requests')
       .select('*')
-      .eq('organization_id', orgId)
+      .eq('workspace_id', orgId)
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
 

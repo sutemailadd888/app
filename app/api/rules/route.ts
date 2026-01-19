@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     .order('created_at', { ascending: false });
 
   if (orgId) {
-    query = query.eq('organization_id', orgId);
+    query = query.eq('workspace_id', orgId);
   }
 
   const { data, error } = await query;
@@ -67,8 +67,8 @@ export async function POST(request: Request) {
 
   const body = await request.json();
 
-  if (!body.organization_id) {
-    return NextResponse.json({ error: 'Organization ID is required' }, { status: 400 });
+  if (!body.workspace_id) {
+    return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 });
   }
 
   const { data, error } = await supabase
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     .insert([
       {
         user_id: user.id,
-        organization_id: body.organization_id,
+        workspace_id: body.workspace_id,
         title: body.title,
         target_day: body.targetDay,
         prompt_custom: body.prompt,

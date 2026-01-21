@@ -14,6 +14,7 @@ import CalendarView from './components/CalendarView';
 import TokenSyncer from './components/TokenSyncer';
 import RequestInbox from './components/RequestInbox';
 import ScheduleSettings from './components/ScheduleSettings';
+import MemberSettings from './components/MemberSettings';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher';
 // ★インポートはOKです
 import { ensurePersonalWorkspace, getMyWorkspaces } from '@/utils/workspace';
@@ -243,6 +244,12 @@ export default function Home() {
                                <ExternalLink size={16}/> <span>予約ページを開く</span>
                            </a>
                        </div>
+
+                       {currentOrg.type === 'team' && (
+                           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100 mt-8">
+                               <MemberSettings orgId={currentOrg.id} />
+                           </div>
+                       )}
                        <MeetingCard session={session} orgId={currentOrg.id} />
                        <RuleList session={session} orgId={currentOrg.id} />
                    </div>

@@ -48,7 +48,7 @@ export default function RuleList({ session, orgId }: Props) {
 
     try {
       // ★ orgIdを使って絞り込み
-      const res = await fetch(`/api/rules?orgId=${orgId}`, {
+      const res = await fetch(`/api/rules?workspace_id=${orgId}`, {
           headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
@@ -122,6 +122,7 @@ export default function RuleList({ session, orgId }: Props) {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({
+                workspace_id: orgId,
                 id: editingId,
                 title: editTitle,
                 targetDay: parseInt(editDay),

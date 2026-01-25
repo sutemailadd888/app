@@ -18,6 +18,7 @@ import MemberSettings from './components/MemberSettings';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher';
 // ★インポートはOKです
 import { ensurePersonalWorkspace, getMyWorkspaces } from '@/utils/workspace';
+import MeetingTypeList from './components/MeetingTypeList';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -238,18 +239,21 @@ export default function Home() {
                    <div key={currentOrg.id} className="animate-in fade-in space-y-8">
                        <RequestInbox session={session} orgId={currentOrg.id} />
                        <CalendarView session={session} />
-                       <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-                           <div className="flex-1"><ScheduleSettings session={session} orgId={currentOrg.id} /></div>
-                           <a href={`/book/${session.user.id}?orgId=${currentOrg.id}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 text-sm text-purple-700 hover:text-white font-bold bg-purple-50 hover:bg-purple-600 border border-purple-200 px-6 py-3 rounded-xl transition shadow-sm h-full">
-                               <ExternalLink size={16}/> <span>予約ページを開く</span>
-                           </a>
-                       </div>
-
+                       {/* 1. 予約メニュー設定 (新機能) */}
+                       <MeetingTypeList 
+                            workspaceId={currentOrg.id} 
+                            userId={session.user.id} 
+                       />
+                       {/* 2. 稼働設定 (土台ルール) */}
+                       {/* 横並びのレイアウト(div)を消して、シンプルに配置します */}
+                       <ScheduleSettings session={session} orgId={currentOrg.id} /> 
+                       {/* 3. チームメンバー設定 */}
                        {currentOrg.type === 'team' && (
                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100 mt-8">
-                               <MemberSettings orgId={currentOrg.id} />
+                           <MemberSettings orgId={currentOrg.id} />
                            </div>
                        )}
+                       {/* 4. 自動調整AI (既存機能) */}
                        <MeetingCard session={session} orgId={currentOrg.id} />
                        <RuleList session={session} orgId={currentOrg.id} />
                    </div>

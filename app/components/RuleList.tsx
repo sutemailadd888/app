@@ -1,10 +1,14 @@
-// app/components/RuleList.tsx
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { CalendarClock, Plus, Loader2, Play, Check, Users, BellRing, Trash2, Pencil, Save } from 'lucide-react';
+import { CalendarClock, Plus, Loader2, Play, Check, Trash2, Pencil, Save, Briefcase } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
 
-// ★ orgIdを受け取るように変更
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 interface Props {
   session: any;
   orgId: string;
@@ -12,273 +16,335 @@ interface Props {
 
 export default function RuleList({ session, orgId }: Props) {
   const [rules, setRules] = useState<any[]>([]);
+  const [meetingTypes, setMeetingTypes] = useState<any[]>([]); // 予約メニュー一覧
   const [loading, setLoading] = useState(false);
   
-  // 新規作成用
+  // 新規作成・編集用
   const [isAdding, setIsAdding] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newDay, setNewDay] = useState('25'); 
-  const [newPrompt, setNewPrompt] = useState('翌月の1日〜10日の平日で。前後の予定と30分あけて。');
-  const [newAttendees, setNewAttendees] = useState('');
-
-  // 編集モード用
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editDay, setEditDay] = useState('');
-  const [editPrompt, setEditPrompt] = useState('');
-  const [editAttendees, setEditAttendees] = useState('');
 
+  // フォームデータ
+  const [formData, setFormData] = useState({
+    title: '',
+    targetDay: '25',
+    meetingTypeId: '' // 選択された予約メニューID
+  });
+
+  // 実行状態
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<any>({});
 
   const todayDate = new Date().getDate();
 
-  // ★ orgIdが変わったら再取得
+  // 1. 初期データ読み込み
   useEffect(() => {
-    fetchRules();
+    fetchData();
   }, [session, orgId]);
 
-  const getToken = () => {
-    return session?.access_token || session?.provider_token;
-  };
+  const fetchData = async () => {
+    if (!orgId) return;
+    const token = session?.access_token || session?.provider_token;
 
-  const fetchRules = async () => {
-    const token = getToken();
-    if (!token || !orgId) return;
-
+    // A. ルール一覧を取得
     try {
-      // ★ orgIdを使って絞り込み
-      const res = await fetch(`/api/rules?workspace_id=${orgId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.rules) setRules(data.rules);
+      // meeting_typesの情報も一緒に取得して表示に使います
+      const { data: rulesData, error } = await supabase
+        .from('rules')
+        .select(`*, meeting_types ( title, duration_minutes )`)
+        .eq('workspace_id', orgId)
+        .order('created_at');
+      
+      if (rulesData) setRules(rulesData);
+    } catch (e) { console.error(e); }
+
+    // B. 予約メニュー一覧を取得 (選択肢用)
+    try {
+      const { data: typesData } = await supabase
+        .from('meeting_types')
+        .select('id, title, duration_minutes')
+        .eq('workspace_id', orgId)
+        .eq('is_active', true);
+        
+      if (typesData) setMeetingTypes(typesData);
     } catch (e) { console.error(e); }
   };
 
-  const handleAddRule = async () => {
-    const token = getToken();
-    if (!token) return alert("認証トークンが見つかりません。");
-    if (!orgId) return alert("ワークスペースが選択されていません。");
-    if (!newDay) return alert("「リマインド日」を入力してください");
+  // 2. 保存処理 (新規・更新共通)
+  const handleSave = async () => {
+    if (!formData.title || !formData.meetingTypeId) {
+        alert("会議名と予約メニューを選択してください");
+        return;
+    }
 
     setLoading(true);
     try {
-      const res = await fetch('/api/rules', {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          workspace_id: orgId, // ★重要: ここでチームIDを保存！
-          title: newTitle,
-          targetDay: parseInt(newDay),
-          prompt: newPrompt,
-          attendees: newAttendees
-        }),
-      });
+      const payload = {
+        workspace_id: orgId,
+        title: formData.title,
+        target_day: parseInt(formData.targetDay),
+        meeting_type_id: formData.meetingTypeId, // ★これが重要
+        // 旧カラムは空文字などを入れておく（互換性のため）
+        prompt_custom: '', 
+        attendees: ''
+      };
 
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "保存に失敗しました");
+      if (editingId) {
+        // 更新
+        const { error } = await supabase
+            .from('rules')
+            .update(payload)
+            .eq('id', editingId);
+        if (error) throw error;
+      } else {
+        // 新規作成
+        const { error } = await supabase
+            .from('rules')
+            .insert(payload);
+        if (error) throw error;
       }
-      
+
+      // リセット
       setIsAdding(false);
-      setNewTitle('');
-      setNewAttendees('');
-      fetchRules();
+      setEditingId(null);
+      setFormData({ title: '', targetDay: '25', meetingTypeId: '' });
+      fetchData();
 
     } catch (e: any) {
       console.error(e);
-      alert(`エラーが発生しました: ${e.message}`);
+      alert(`保存エラー: ${e.message}`);
     } finally {
         setLoading(false);
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('このルールを削除してもよろしいですか？')) return;
-    const token = getToken();
-    await fetch(`/api/rules?id=${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    fetchRules();
+    if (!confirm('このルールを削除しますか？')) return;
+    await supabase.from('rules').delete().eq('id', id);
+    fetchData();
   };
 
   const startEdit = (rule: any) => {
       setEditingId(rule.id);
-      setEditTitle(rule.title);
-      setEditDay(rule.target_day.toString());
-      setEditPrompt(rule.prompt_custom);
-      setEditAttendees(rule.attendees || '');
+      setFormData({
+          title: rule.title,
+          targetDay: rule.target_day.toString(),
+          meetingTypeId: rule.meeting_type_id || ''
+      });
+      setIsAdding(false);
   };
 
-  const handleUpdate = async () => {
-    const token = getToken();
-    try {
-        const res = await fetch('/api/rules', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-                workspace_id: orgId,
-                id: editingId,
-                title: editTitle,
-                targetDay: parseInt(editDay),
-                prompt: editPrompt,
-                attendees: editAttendees
-            }),
-        });
-
-        if (!res.ok) throw new Error("更新に失敗しました");
-
-        setEditingId(null);
-        fetchRules();
-    } catch(e: any) {
-        alert(e.message);
-    }
-  };
-
+  // 3. 自動調整を実行 (Run)
   const runRule = async (rule: any) => {
-    const token = session?.provider_token;
-    if (!token) return alert("再ログインしてください。");
+    if (!rule.meeting_type_id) {
+        alert("このルールには予約メニューが紐付いていません。編集して設定してください。");
+        return;
+    }
 
     setRunningRuleId(rule.id);
-    setSuggestions({ ...suggestions, [rule.id]: null });
+    setSuggestions({ ...suggestions, [rule.id]: [] });
     
     try {
-        const now = new Date().toISOString();
-        const calRes = await fetch(
-            `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now}&maxResults=20&singleEvents=true&orderBy=startTime`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-        const calData = await calRes.json();
-        
+        // A. 紐付いているメニューのslugを取得
+        const { data: typeData } = await supabase
+            .from('meeting_types')
+            .select('slug, duration_minutes')
+            .eq('id', rule.meeting_type_id)
+            .single();
+
+        if (!typeData) throw new Error("予約メニューが見つかりません");
+
+        // B. 「明日から1週間」の空き枠を検索
+        // API/book/slots を再利用して、正確な「全員の空き時間」を取得
+        const dates = [];
         const today = new Date();
-        let targetMonth = today.getMonth();
-        if (today.getDate() >= 20) targetMonth = targetMonth + 1;
-
-        const targetDate = new Date(today.getFullYear(), targetMonth, 1);
-        const dateString = `${targetDate.getFullYear()}年${targetDate.getMonth() + 1}月`;
-        const aiPrompt = `【自動実行モード】会議名: ${rule.title}。ターゲット時期: ${dateString}。詳細条件: ${rule.prompt_custom}。`;
-
-        const aiRes = await fetch('/api/gemini', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ events: calData.items, userPrompt: aiPrompt }),
-        });
-        const aiData = await aiRes.json();
-        
-        if (aiData.suggestions) {
-            setSuggestions({ ...suggestions, [rule.id]: aiData.suggestions });
-        } else {
-            alert("AIからの応答がありませんでした。");
+        for (let i = 1; i <= 7; i++) {
+            const d = new Date(today);
+            d.setDate(today.getDate() + i);
+            dates.push(d.toISOString().split('T')[0]); // YYYY-MM-DD
         }
 
-    } catch (error) {
+        const promises = dates.map(async (date) => {
+            const res = await fetch(`/api/book/slots?slug=${typeData.slug}&date=${date}`);
+            const data = await res.json();
+            return { date, slots: data.slots || [] };
+        });
+
+        const results = await Promise.all(promises);
+
+        // C. 結果を整形して表示
+        const candidates: any[] = [];
+        results.forEach(({ date, slots }) => {
+            // 各日、早い時間から最大2つピックアップ
+            slots.slice(0, 2).forEach((time: string) => {
+                // 終了時間を計算
+                const [h, m] = time.split(':').map(Number);
+                const endDate = new Date();
+                endDate.setHours(h, m + typeData.duration_minutes);
+                const endTimeStr = endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+                candidates.push({
+                    date: date, // 2026-02-01
+                    time: `${time}〜${endTimeStr}`, // 10:00〜11:00
+                    displayDate: new Date(date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' })
+                });
+            });
+        });
+
+        if (candidates.length > 0) {
+            // 最大5件に絞る
+            setSuggestions({ ...suggestions, [rule.id]: candidates.slice(0, 5) });
+        } else {
+            alert("条件に合う空き時間が見つかりませんでした。\n（全員の予定が埋まっている可能性があります）");
+        }
+
+    } catch (error: any) {
         console.error(error);
-        alert("実行エラー");
+        alert("実行エラー: " + error.message);
     } finally {
         setRunningRuleId(null);
     }
   };
 
-  const confirmEvent = async (suggestion: any, attendees: string) => {
-      if(!confirm(`${suggestion.date} ${suggestion.time} で確定し、招待を送りますか？`)) return;
+  // 4. 予定を確定 (Googleカレンダーに登録)
+  const confirmEvent = async (suggestion: any, rule: any) => {
+      if(!confirm(`${suggestion.displayDate} ${suggestion.time} で確定しますか？\n(関係者全員に招待が飛びます)`)) return;
       
       try {
-        const res = await fetch('/api/calendar/create', {
+        // APIには start_time, end_time, slug を送る必要がある
+        // calendar/create APIも修正が必要かもしれませんが、
+        // いったん簡易的に「仮押さえ(booking_requests) API」を使って実装するか、
+        // もしくは既存の calendar/create を使うか。
+        // ここでは「既存の book/request」を再利用するのが一番安全です。
+
+        // 時間文字列を分割
+        const [startTimeStr] = suggestion.time.split('〜');
+        
+        // 予約リクエスト送信 (自分の名前で自分たちのアポを取る)
+        const { data: typeData } = await supabase
+            .from('meeting_types')
+            .select('slug')
+            .eq('id', rule.meeting_type_id)
+            .single();
+
+        const res = await fetch('/api/book/request', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                session: session,
-                eventDetails: suggestion,
-                attendees: attendees
-            }),
+                slug: typeData?.slug,
+                date: suggestion.date,
+                time: startTimeStr,
+                guest_name: '社内自動調整', // 内部用
+                guest_email: session.user.email, // 自分のメアド
+                note: `自動調整ルール: ${rule.title} による作成`
+            })
         });
-        const data = await res.json();
-        if (data.success) {
-            alert("🎉 予定を作成しました！");
-            setSuggestions({});
+
+        if (res.ok) {
+            alert("🎉 予定を確定し、カレンダーに登録しました！");
+            setSuggestions({ ...suggestions, [rule.id]: [] }); // 候補を消す
         } else {
-            alert("作成失敗: " + data.error);
+            const err = await res.json();
+            alert("作成失敗: " + err.error);
         }
       } catch (e) {
-          alert("作成失敗");
+          alert("通信エラー");
       }
   };
 
+  // --- UIコンポーネント ---
+
+  const RuleForm = () => (
+      <div className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm mb-4 animate-in fade-in slide-in-from-top-2">
+          <div className="mb-3">
+              <label className="text-xs font-bold text-gray-500 block mb-1">会議名</label>
+              <input 
+                type="text" 
+                value={formData.title} 
+                onChange={e => setFormData({...formData, title: e.target.value})} 
+                className="w-full text-sm border border-gray-300 rounded p-2"
+                placeholder="例: 週次定例MTG"
+              />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <div>
+                <label className="text-xs font-bold text-gray-500 block mb-1">使用する予約メニュー</label>
+                <select 
+                    value={formData.meetingTypeId} 
+                    onChange={e => setFormData({...formData, meetingTypeId: e.target.value})}
+                    className="w-full text-sm border border-gray-300 rounded p-2 bg-white"
+                >
+                    <option value="">-- 選択してください --</option>
+                    {meetingTypes.map(m => (
+                        <option key={m.id} value={m.id}>
+                            {m.title} ({m.duration_minutes}分)
+                        </option>
+                    ))}
+                </select>
+                {meetingTypes.length === 0 && <p className="text-xs text-red-500 mt-1">※先に「予約メニュー」を作成してください</p>}
+            </div>
+            <div>
+                <label className="text-xs font-bold text-purple-600 block mb-1">毎月のリマインド日</label>
+                <input 
+                    type="number" 
+                    value={formData.targetDay} 
+                    onChange={e => setFormData({...formData, targetDay: e.target.value})} 
+                    className="w-full text-sm border border-purple-300 bg-purple-50 rounded p-2 font-bold"
+                />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-4">
+              <button 
+                onClick={() => { setIsAdding(false); setEditingId(null); }} 
+                className="text-xs text-gray-500 px-3 py-2"
+              >
+                キャンセル
+              </button>
+              <button 
+                onClick={handleSave} 
+                disabled={loading} 
+                className="text-xs bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 font-bold flex items-center gap-1"
+              >
+                {loading ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
+                保存する
+              </button>
+          </div>
+      </div>
+  );
+
   return (
-    <div className="max-w-2xl mt-8 mb-20">
+    <div className="max-w-2xl mt-4 mb-20">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-            <CalendarClock className="text-purple-600"/>
-            自動調整ルール
+        <h3 className="text-sm font-bold text-gray-600 flex items-center gap-2">
+            登録済みルール一覧
         </h3>
         {!isAdding && !editingId && (
             <button 
-                onClick={() => setIsAdding(true)}
-                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1 rounded-full flex items-center gap-1 transition"
+                onClick={() => { 
+                    setFormData({ title: '', targetDay: '25', meetingTypeId: '' }); 
+                    setIsAdding(true); 
+                }}
+                className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-3 py-1.5 rounded-full flex items-center gap-1 transition font-bold"
             >
-                <Plus size={14}/> 新規ルール
+                <Plus size={14}/> 新規ルール作成
             </button>
         )}
       </div>
 
-      {isAdding && (
-          <div className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm mb-4 animate-in fade-in slide-in-from-top-2">
-              <div className="grid grid-cols-2 gap-4 mb-3">
-                  <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">会議名</label>
-                      <input type="text" value={newTitle} onChange={e => setNewTitle(e.target.value)} className="w-full text-sm border border-gray-300 rounded p-2"/>
-                  </div>
-                  <div>
-                      <label className="text-xs font-bold text-purple-600 block mb-1">毎月の実行リマインド日</label>
-                      <input type="number" value={newDay} onChange={e => setNewDay(e.target.value)} className="w-full text-sm border border-purple-300 bg-purple-50 rounded p-2 font-bold"/>
-                  </div>
-              </div>
-              <div className="mb-3">
-                  <label className="text-xs font-bold text-gray-500 block mb-1">参加者 (カンマ区切り)</label>
-                  <input type="text" value={newAttendees} onChange={e => setNewAttendees(e.target.value)} placeholder="a@test.com, b@test.com" className="w-full text-sm border border-gray-300 rounded p-2"/>
-              </div>
-              <div className="mb-3">
-                  <label className="text-xs font-bold text-gray-500 block mb-1">AIへの指示</label>
-                  <input type="text" value={newPrompt} onChange={e => setNewPrompt(e.target.value)} className="w-full text-sm border border-gray-300 rounded p-2"/>
-              </div>
-              <div className="flex justify-end gap-2">
-                  <button onClick={() => setIsAdding(false)} className="text-xs text-gray-500 px-3 py-2">キャンセル</button>
-                  <button onClick={handleAddRule} disabled={loading} className="text-xs bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">保存</button>
-              </div>
-          </div>
-      )}
+      {isAdding && !editingId && <RuleForm />}
 
-      {/* 以下、表示部分は一切変更なし */}
       <div className="space-y-4">
           {rules.length === 0 && !isAdding && (
-              <p className="text-sm text-gray-400 text-center py-4 border border-dashed rounded-lg">ルールがありません</p>
+              <p className="text-sm text-gray-400 text-center py-8 border border-dashed rounded-lg bg-gray-50">
+                  まだルールがありません。<br/>「新規ルール作成」から追加してください。
+              </p>
           )}
 
           {rules.map((rule) => {
               const isDueToday = todayDate === rule.target_day;
               
-              if (editingId === rule.id) {
-                  return (
-                    <div key={rule.id} className="bg-white p-4 rounded-lg border-2 border-purple-400 shadow-md">
-                        <div className="text-xs font-bold text-purple-600 mb-2 flex items-center gap-1"><Pencil size={12}/> ルールを編集中</div>
-                        <div className="grid grid-cols-2 gap-4 mb-3">
-                            <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} className="text-sm border rounded p-2" placeholder="会議名"/>
-                            <input type="number" value={editDay} onChange={e => setEditDay(e.target.value)} className="text-sm border rounded p-2" placeholder="リマインド日"/>
-                        </div>
-                        <input type="text" value={editAttendees} onChange={e => setEditAttendees(e.target.value)} className="w-full text-sm border rounded p-2 mb-3" placeholder="参加者"/>
-                        <textarea value={editPrompt} onChange={e => setEditPrompt(e.target.value)} className="w-full text-sm border rounded p-2 mb-3" rows={2} placeholder="AIへの指示"/>
-                        <div className="flex justify-end gap-2">
-                            <button onClick={() => setEditingId(null)} className="text-xs text-gray-500 px-3 py-2">キャンセル</button>
-                            <button onClick={handleUpdate} className="text-xs bg-purple-600 text-white px-4 py-2 rounded flex items-center gap-1"><Save size={14}/> 更新</button>
-                        </div>
-                    </div>
-                  );
-              }
+              if (editingId === rule.id) return <RuleForm key={rule.id} />;
 
               return (
                 <div key={rule.id} className={`rounded-lg border overflow-hidden shadow-sm transition ${isDueToday ? 'border-yellow-400 bg-yellow-50 ring-2 ring-yellow-200' : 'border-gray-200 bg-white'}`}>
@@ -286,19 +352,20 @@ export default function RuleList({ session, orgId }: Props) {
                         <div className="flex-1">
                             <div className="font-bold text-gray-800 flex items-center gap-2">
                                 {rule.title}
-                                {isDueToday ? (
-                                    <span className="text-[10px] bg-yellow-400 text-white px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse"><BellRing size={10}/> 今日が実行日</span>
-                                ) : (
-                                    <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">毎月{rule.target_day}日リマインド</span>
+                                {isDueToday && (
+                                    <span className="text-[10px] bg-yellow-400 text-white px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse"><Briefcase size={10}/> 今日が実行日</span>
                                 )}
                             </div>
                             <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-2 items-center">
-                                <span className="truncate max-w-[200px]">{rule.prompt_custom}</span>
-                                {rule.attendees && (
-                                    <span className="flex items-center gap-1 bg-white border border-gray-200 px-1.5 rounded text-gray-600">
-                                        <Users size={10}/> {rule.attendees.split(',').length}名
+                                {rule.meeting_types ? (
+                                    <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
+                                        設定: {rule.meeting_types.title} ({rule.meeting_types.duration_minutes}分)
                                     </span>
+                                ) : (
+                                    <span className="text-red-400">※予約メニュー未設定</span>
                                 )}
+                                <span className="text-gray-400">|</span>
+                                <span>毎月{rule.target_day}日リマインド</span>
                             </div>
                         </div>
                         
@@ -312,22 +379,31 @@ export default function RuleList({ session, orgId }: Props) {
                                 className={`ml-2 flex items-center gap-1 border px-3 py-1.5 rounded-full text-xs font-bold transition shadow-sm ${isDueToday ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700' : 'bg-white text-purple-600 border-purple-200 hover:bg-purple-50'}`}
                             >
                                 {runningRuleId === rule.id ? <Loader2 size={14} className="animate-spin"/> : <Play size={14} fill="currentColor" />}
-                                <span className="hidden sm:inline">実行</span>
+                                <span className="hidden sm:inline">自動調整を実行</span>
                             </button>
                         </div>
                     </div>
                     
-                    {suggestions[rule.id] && (
-                        <div className="p-4 bg-white border-t border-purple-100 animation-fade-in">
-                            <div className="text-xs font-bold text-purple-800 mb-2">⚡️ AIが見つけた候補:</div>
+                    {/* 実行結果 (候補リスト) */}
+                    {suggestions[rule.id] && suggestions[rule.id].length > 0 && (
+                        <div className="p-4 bg-purple-50 border-t border-purple-100 animate-in fade-in">
+                            <div className="text-xs font-bold text-purple-800 mb-2 flex items-center gap-1">
+                                <CalendarClock size={14}/> 
+                                全員が参加可能な候補日 (直近1週間):
+                            </div>
                             <div className="space-y-2">
                                 {suggestions[rule.id].map((s: any, i: number) => (
-                                    <div key={i} className="flex items-center justify-between bg-purple-50 p-2 rounded border border-purple-100">
-                                        <div className="text-xs">
-                                            <span className="font-bold text-gray-700">{s.date} {s.time}</span>
-                                            <span className="text-gray-400 ml-2">({s.reason})</span>
+                                    <div key={i} className="flex items-center justify-between bg-white p-3 rounded border border-purple-100 hover:border-purple-300 transition shadow-sm">
+                                        <div className="text-sm">
+                                            <span className="font-bold text-gray-800 mr-2">{s.displayDate}</span>
+                                            <span className="text-purple-700 font-medium">{s.time}</span>
                                         </div>
-                                        <button onClick={() => confirmEvent(s, rule.attendees)} className="text-green-600 hover:bg-green-100 p-1.5 rounded-full bg-white border border-green-200"><Check size={16}/></button>
+                                        <button 
+                                            onClick={() => confirmEvent(s, rule)} 
+                                            className="text-xs bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 font-bold flex items-center gap-1"
+                                        >
+                                            <Check size={14}/> 確定
+                                        </button>
                                     </div>
                                 ))}
                             </div>

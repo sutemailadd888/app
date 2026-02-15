@@ -195,10 +195,10 @@ export default function Home() {
                            <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
                                <h3 className="font-bold text-gray-700 mb-1 flex items-center gap-2">
                                    <ExternalLink size={18} className="text-gray-400"/>
-                                   予約ページの作成 (相手に選んでもらう)
+                                   予約ページの作成 (公開用メニュー)
                                </h3>
-                               <p className="text-xs text-gray-500 mb-4">URLを送って、相手に空き枠を選んで予約してもらう機能です。</p>
-                               <MeetingTypeList workspaceId={currentOrg.id} userId={session.user.id} />
+                               <p className="text-xs text-gray-500 mb-4">URLを発行し、お客様に空き枠を選んで予約してもらう機能です。</p>
+                               <MeetingTypeList workspaceId={currentOrg.id} userId={session.user.id} isInternal={false} />
                            </div>
 
                            {/* (B) 自分が提案する */}
@@ -227,11 +227,24 @@ export default function Home() {
                                </div>
                            )}
 
-                           {/* (C) 強制的に決める */}
+                           {/* (C) 社内会議テンプレート */}
+                           <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
+                               <h3 className="font-bold text-gray-700 mb-1 flex items-center gap-2">
+                                   <Building2 size={18} className="text-gray-400"/>
+                                   会議テンプレートの作成 (社内用)
+                               </h3>
+                               <p className="text-xs text-gray-500 mb-4">
+                                   社内会議の「参加者」や「時間」の雛形です。<br/>
+                                   下の「自動決定ルール」でこれを選択して使用します。
+                               </p>
+                               <MeetingTypeList workspaceId={currentOrg.id} userId={session.user.id} isInternal={true} />
+                           </div>
+
+                           {/* (D) 強制的に決める */}
                            <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
                                <h3 className="font-bold text-gray-700 mb-1 flex items-center gap-2">
                                    <CheckCircle2 size={18} className="text-gray-400"/>
-                                   社内会議の自動決定 (強制的に決める)
+                                   社内会議の自動決定 (実行ルール)
                                </h3>
                                <p className="text-xs text-gray-500 mb-4">メンバー全員の空き時間を検索し、会議を強制的にカレンダーに入れます。</p>
                                <RuleList session={session} orgId={currentOrg.id} />

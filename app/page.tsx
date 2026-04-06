@@ -4,11 +4,12 @@ import React, { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { 
   Users, Calendar, LogOut, Briefcase, ExternalLink, 
-  Menu, X, CheckCircle2, Loader2, Globe, Building2, BookOpen // ★ BookOpen を追加
+  Menu, X, CheckCircle2, Loader2, Globe, Building2, BookOpen 
 } from 'lucide-react';
 
 // コンポーネント群
 import MeetingCard from './components/MeetingCard';
+import RuleList from './components/RuleList';
 import CalendarView from './components/CalendarView';
 import TokenSyncer from './components/TokenSyncer';
 import RequestInbox from './components/RequestInbox';
@@ -17,8 +18,7 @@ import MemberSettings from './components/MemberSettings';
 import WorkspaceSwitcher from './components/WorkspaceSwitcher';
 import { ensurePersonalWorkspace, getMyWorkspaces } from '@/utils/workspace';
 import MeetingTypeList from './components/MeetingTypeList';
-import InternalMeetingManager from './components/InternalMeetingManager';
-import LearningManager from './components/LearningManager'; // ★ 新規追加
+import LearningManager from './components/LearningManager'; // ★ 暗記ツールを追加
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -92,6 +92,7 @@ export default function Home() {
 
   if (loading) return <div className="flex h-screen items-center justify-center text-gray-400"><Loader2 className="animate-spin"/></div>;
 
+  // 🔐 Login Screen
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
@@ -113,11 +114,13 @@ export default function Home() {
                 </svg>
                 <span>Googleでログイン</span>
             </button>
+            <p className="mt-8 text-xs text-gray-400">© 2026 GAKU-HUB OS</p>
         </div>
       </div>
     );
   }
 
+  // 🖥️ Dashboard
   return (
     <div className="flex h-screen bg-white text-gray-800 font-sans overflow-hidden relative">
       
@@ -137,7 +140,6 @@ export default function Home() {
            <div className="p-4 border-b border-gray-200 h-16 flex items-center mt-10 md:mt-0">
                {currentOrg ? <div className="font-bold text-gray-800 truncate text-lg">{currentOrg.name}</div> : <div className="text-gray-400 text-sm animate-pulse">Loading...</div>}
            </div>
-           
            <div className="flex-1 overflow-y-auto py-4">
              <div className="px-4 py-1 text-xs text-gray-500 font-bold uppercase tracking-wider mb-2">Menu</div>
              <nav className="space-y-1 px-2">
@@ -150,7 +152,6 @@ export default function Home() {
                )}
              </nav>
            </div>
-
            <div className="p-4 border-t border-gray-200 bg-gray-100/50">
              <div className="flex items-center space-x-3 mb-3">
                {session.user.user_metadata.avatar_url ? <img src={session.user.user_metadata.avatar_url} className="w-8 h-8 rounded-full border border-gray-200"/> : <div className="w-8 h-8 rounded-full bg-purple-500 text-white flex items-center justify-center text-xs font-bold">{session.user.email?.slice(0,2).toUpperCase()}</div>}
@@ -167,6 +168,7 @@ export default function Home() {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto relative bg-white w-full">
         <div className="pt-14 md:pt-0 min-h-full">
+           {/* Header Banner */}
            <div className="h-32 md:h-48 bg-gradient-to-r from-gray-100 to-gray-200 relative">
              <div className="absolute bottom-4 left-6 md:left-12">
                 <h1 className="text-2xl md:text-3xl font-bold text-gray-800 flex items-center gap-2">
@@ -181,19 +183,23 @@ export default function Home() {
                <TokenSyncer session={session} />
                {!currentOrg && <div className="text-center py-20 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200"><p>ワークスペースを選択または作成してください</p></div>}
 
-               {/* ===================== 日程調整タブ ===================== */}
+               {/* === 日程調整タブ === */}
                {currentOrg && activeTab === 'meeting' && (
                    <div key={currentOrg.id} className="animate-in fade-in space-y-12">
+                       {/* 0. 受信箱 & カレンダー (確認エリア) */}
                        <div className="space-y-6">
                            <RequestInbox session={session} orgId={currentOrg.id} />
                            <CalendarView session={session} />
                        </div>
 
+                       {/* 1. 外部調整エリア */}
                        <div className="space-y-6">
                            <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
                                <Globe className="text-blue-500" size={24}/>
                                <h2 className="text-lg font-bold text-gray-800">外部との日程調整</h2>
                            </div>
+                           
+                           {/* (A) 相手に選んでもらう */}
                            <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
                                <h3 className="font-bold text-gray-700 mb-1 flex items-center gap-2">
                                    <ExternalLink size={18} className="text-gray-400"/>
@@ -202,6 +208,8 @@ export default function Home() {
                                <p className="text-xs text-gray-500 mb-4">URLを発行し、お客様に空き枠を選んで予約してもらう機能です。</p>
                                <MeetingTypeList workspaceId={currentOrg.id} userId={session.user.id} />
                            </div>
+
+                           {/* (B) 自分が提案する */}
                            <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
                                <h3 className="font-bold text-gray-700 mb-1 flex items-center gap-2">
                                    <Calendar size={18} className="text-gray-400"/>
@@ -212,25 +220,45 @@ export default function Home() {
                            </div>
                        </div>
 
+                       {/* 2. 社内調整エリア */}
                        <div className="space-y-6">
                            <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
                                <Building2 className="text-purple-500" size={24}/>
                                <h2 className="text-lg font-bold text-gray-800">社内・チーム設定</h2>
                            </div>
+
+                           {/* チームメンバー管理 (チームのみ) */}
                            {currentOrg.type === 'team' && (
                                <div className="bg-white p-6 rounded-xl border border-gray-200">
                                    <h3 className="font-bold text-gray-700 mb-4">チームメンバー管理</h3>
                                    <MemberSettings orgId={currentOrg.id} />
                                </div>
                            )}
+
+                           {/* (C) 社内会議テンプレート */}
+                           <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
+                               <h3 className="font-bold text-gray-700 mb-1 flex items-center gap-2">
+                                   <Building2 size={18} className="text-gray-400"/>
+                                   会議テンプレートの作成 (社内用)
+                               </h3>
+                               <p className="text-xs text-gray-500 mb-4">
+                                   社内会議の「参加者」や「時間」の雛形です。<br/>
+                                   下の「自動決定ルール」でこれを選択して使用します。
+                               </p>
+                               <MeetingTypeList workspaceId={currentOrg.id} userId={session.user.id} />
+                           </div>
+
+                           {/* (D) 強制的に決める */}
                            <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
                                <h3 className="font-bold text-gray-700 mb-1 flex items-center gap-2">
                                    <CheckCircle2 size={18} className="text-gray-400"/>
-                                   社内会議マネージャー (設定 & 自動調整)
+                                   社内会議の自動決定 (実行ルール)
                                </h3>
-                               <p className="text-xs text-gray-500 mb-4">定例会議などの設定を作成し、ボタン一つで全員の空き時間を確保します。</p>
-                               <InternalMeetingManager workspaceId={currentOrg.id} userId={session.user.id} userEmail={session.user.email} />
+                               <p className="text-xs text-gray-500 mb-4">メンバー全員の空き時間を検索し、会議を強制的にカレンダーに入れます。</p>
+                               <RuleList session={session} orgId={currentOrg.id} />
                            </div>
+
+                           {/* 土台の設定 */}
                            <div className="bg-white p-6 rounded-xl border border-gray-200">
                                <h3 className="font-bold text-gray-700 mb-4">基本稼働設定 (営業時間)</h3>
                                <ScheduleSettings session={session} orgId={currentOrg.id} />
@@ -239,7 +267,7 @@ export default function Home() {
                    </div>
                )}
 
-               {/* ===================== 採用面談タブ ===================== */}
+               {/* === 採用面談タブ === */}
                {currentOrg && activeTab === 'recruitment' && (
                    <div className="text-center py-24 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50 animate-in fade-in">
                        <Briefcase className="mx-auto text-gray-300 mb-4" size={48} />
@@ -248,13 +276,12 @@ export default function Home() {
                    </div>
                )}
 
-               {/* ===================== 学習ツールタブ (新規) ===================== */}
+               {/* === 学習ツールタブ (新規追加) === */}
                {currentOrg && currentOrg.type === 'personal' && activeTab === 'learning' && (
                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                        <LearningManager workspaceId={currentOrg.id} userId={session.user.id} />
                    </div>
                )}
-
            </div>
         </div>
       </main>
